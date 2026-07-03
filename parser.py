@@ -1,8 +1,18 @@
+import ast
 import re
 import json
 from bs4 import BeautifulSoup, Tag
 from typing import Dict, Any, List, Optional, Tuple
 from urllib.parse import urlparse
+
+
+def _parse_list_string(val: Any) -> Any:
+    if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
+        try:
+            return ast.literal_eval(val)
+        except (ValueError, SyntaxError):
+            pass
+    return val
 
 
 # ── JSON-LD helpers ──────────────────────────────────────────────────
@@ -224,7 +234,9 @@ def _extract_nested_content(container: Tag) -> List[Any]:
                 else:
                     items.append(inner)
         elif tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
-            continue
+            t = child.get_text(strip=True)
+            if t:
+                items.append(t)
     return items
 
 
@@ -287,13 +299,13 @@ def extract_descriptive_sections(html: str) -> Dict[str, List[Any]]:
                 lambda t: t.get("data-testid", "").startswith("pdp-fact-box-row-")
             )
             if fact_rows:
-                items = []
+                merged = {}
                 for row in fact_rows:
                     kv = _extract_fact_row(row)
                     if kv:
-                        items.append(kv)
-                if items:
-                    sections[heading] = items
+                        merged.update(kv)
+                if merged:
+                    sections[heading] = merged
                 continue
 
         # ── Special: FAQ ───────────────────────────────────────────
@@ -338,15 +350,15 @@ def extract_descriptive_sections(html: str) -> Dict[str, List[Any]]:
 
     # Also extract hero sections that appear before the description
     hero_data = {}
-    hero_title = soup.find(lambda t: t.get("data-testid") == "pdp-hero-product-title")
-    if hero_title:
-        hero_data["Product Title"] = [hero_title.get_text(strip=True)]
-    hero_salt = soup.find(lambda t: t.get("data-testid") == "pdp-hero-salt-composition")
-    if hero_salt:
-        hero_data["Salt Composition"] = [hero_salt.get_text(strip=True)]
+    # hero_title = soup.find(lambda t: t.get("data-testid") == "pdp-hero-product-title")
+    # if hero_title:
+    #     hero_data["Product Title"] = [hero_title.get_text(strip=True)]
+    # hero_salt = soup.find(lambda t: t.get("data-testid") == "pdp-hero-salt-composition")
+    # if hero_salt:
+    #     hero_data["Salt Composition"] = [hero_salt.get_text(strip=True)]
     hero_summary = soup.find(lambda t: t.get("data-testid") == "pdp-hero-quick-summary")
     if hero_summary:
-        hero_data["Quick Summary"] = [hero_summary.get_text(strip=True)]
+        hero_data["Quick Summary"] = [hero_summary.get_text(strip=True).strip('Read more')]
 
     merged = {}
     for k, v in hero_data.items():
@@ -355,17 +367,23 @@ def extract_descriptive_sections(html: str) -> Dict[str, List[Any]]:
         if k not in merged:
             merged[k] = v
 
-    disclaimer_elem = soup.find(lambda t: t.name and t.get_text(strip=True).startswith("Disclaimer"))
-    if disclaimer_elem:
-        parent_section = disclaimer_elem.find_parent(lambda t: isinstance(t, Tag) and t.get("data-slot", "").startswith("section-"))
-        if parent_section:
-            content = _get_content_container(parent_section)
-            if content:
-                merged["Disclaimer"] = _extract_nested_content(content)
-        if "Disclaimer" not in merged:
-            txt = disclaimer_elem.get_text(strip=True)
-            if txt:
-                merged["Disclaimer"] = [txt]
+    # disclaimer_elem = soup.find(lambda t: t.name and t.get_text(strip=True).startswith("Disclaimer"))
+    # if disclaimer_elem:
+    #     txt = disclaimer_elem.get_text(strip=True)
+    #     for prefix in ("Disclaimer:", "Disclaimer"):
+    #         if txt.startswith(prefix):
+    #             txt = txt[len(prefix):].lstrip()
+    #             break
+    #     for marker in ("Read our Editorial Policy", "Having issues", "Report Error"):
+    #         idx = txt.find(marker)
+    #         if idx != -1:
+    #             txt = txt[:idx].rstrip()
+    #             break
+    #     if txt:
+    merged["Disclaimer"] = """PlatinumRx is committed to providing reliable and accurate information to support informed customer decisions. However, all information made available on the Platform, including product descriptions, comparisons, and other content, is provided solely for general informational purposes. Such information is not intended to diagnose, prevent, treat, or cure any medical condition, nor should it be relied upon as a substitute for professional medical advice, diagnosis, or treatment.
+The display of products on the Platform does not constitute any recommendation, endorsement, critique or promotion of any product.PlatinumRx does not undertake any clinical, therapeutic, or qualitative analysis or evaluation of the products displayed or offered for sale. Products shown on the Platform may include the exact product searched for by the User or may be displayed for price comparison purposes or may include generic alternatives identified by PlatinumRx . The inclusion or display of such alternatives does not amount to any recommendation, endorsement, guarantee, assurance, inducement and/or preference by PlatinumRxand PlatinumRx does not assure or guarantee to any User efficacy, or suitability of any product displayed on the Platform
+PlatinumRxdoes not provide medical advice or clinical recommendations, and no information on the Platform shall be construed as establishing a doctor-patient relationship. The Platform may facilitate access to third-party telemedicine service providers and registered medical practitioners ("RMPs"); however, such consultations are independent, and PlatinumRx does not control, influence, or assume responsibility for any advice, diagnosis, or prescription provided by such third parties. Users are strongly advised to consult a qualified and registered medical practitioner for any medical concerns, including the suitability, dosage, or use of any pharmaceutical product.
+By accessing or using the Platform, you are encouraged to carefully review our Terms and Conditions and ensure that you understand and agree to them prior to using the Platform or its services."""
 
     return merged
 
@@ -472,6 +490,119 @@ def extract_comparison_table(html: str) -> Dict[str, Any]:
     }
 
 
+def extract_doctor_approved(html: str) -> Optional[Dict[str, Any]]:
+    soup = BeautifulSoup(html, "html.parser")
+
+    for block in extract_json_ld(html):
+        if not isinstance(block, dict):
+            continue
+        for key in block:
+            if "doctor" in key.lower():
+                raw = block[key] if isinstance(block[key], dict) else block
+                if isinstance(raw, dict):
+                    return _format_doctor_data(raw)
+
+    objects = _find_rsc_objects(html)
+    if objects:
+        resolved_all = {}
+        for oid, obj in objects.items():
+            resolved_all[oid] = _resolve_refs(obj, objects)
+        for obj in resolved_all.values():
+            if isinstance(obj, dict):
+                for key in obj:
+                    if "doctor" in key.lower():
+                        raw = obj[key] if isinstance(obj[key], dict) else obj
+                        if isinstance(raw, dict):
+                            return _format_doctor_data(raw)
+
+    next_data = soup.find("script", id="__NEXT_DATA__")
+    if next_data:
+        try:
+            parsed = json.loads(next_data.string)
+            props = parsed.get("props", {})
+            page_props = props.get("pageProps", props)
+            for key in page_props:
+                if "doctor" in key.lower():
+                    val = page_props[key]
+                    if isinstance(val, dict):
+                        return _format_doctor_data(val)
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            pass
+
+    return None
+
+
+def _format_doctor_data(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    badge = raw.get("badge") or raw.get("title") or raw.get("heading") or "Doctor Approved & Trusted"
+
+    contributors_raw = (
+        raw.get("contributors")
+        or raw.get("doctors")
+        or raw.get("team")
+        or []
+    )
+    contributors = []
+    if isinstance(contributors_raw, list):
+        for c in contributors_raw:
+            if isinstance(c, dict):
+                contributors.append({
+                    "name": c.get("name", ""),
+                    "qualification": c.get("qualification") or c.get("qualifications", ""),
+                    "url": c.get("url", ""),
+                    "designation": c.get("designation") or c.get("designations", ""),
+                })
+
+    if not contributors:
+        return None
+
+    last_updated = raw.get("lastUpdated") or raw.get("last_updated") or raw.get("date") or ""
+
+    return {
+        "badge": badge,
+        "contributors": contributors,
+        "last_updated": last_updated,
+    }
+
+
+def extract_category_hierarchy(html: str) -> Any:
+    for block in extract_json_ld(html):
+        if not isinstance(block, dict):
+            continue
+        for k, v in block.items():
+            if ("categor" in k.lower() or "hierarchy" in k.lower()) and isinstance(v, (dict, list)):
+                return v
+        if isinstance(block.get("category"), dict):
+            return block["category"]
+
+    objects = _find_rsc_objects(html)
+    if objects:
+        resolved_all = {}
+        for oid, obj in objects.items():
+            resolved_all[oid] = _resolve_refs(obj, objects)
+        for obj in resolved_all.values():
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if ("categor" in k.lower() or "hierarchy" in k.lower()) and not k.startswith("sub_") and isinstance(v, (dict, list)):
+                        return v
+
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup.find_all("script"):
+        if tag.get("type") == "application/json":
+            try:
+                parsed = json.loads(tag.string)
+                for k, v in (parsed.items() if isinstance(parsed, dict) else []):
+                    if ("categor" in k.lower() or "hierarchy" in k.lower()) and isinstance(v, (dict, list)):
+                        return v
+            except (json.JSONDecodeError, AttributeError, TypeError):
+                pass
+
+    bc = extract_breadcrumbs(html)
+    if bc:
+        return bc
+
+    return None
+
+
 def parse_pdp_page(html: str) -> Dict[str, Any]:
     drug_ld = extract_drug_ld(html)
     product_ld = extract_product_ld(html)
@@ -488,15 +619,12 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
 
     basic_info = {}
     if drug_ld:
-        basic_info["prescription_status"] = drug_ld.get("prescriptionStatus")
         basic_info["active_ingredient"] = drug_ld.get("activeIngredient")
         basic_info["dosage_form"] = drug_ld.get("dosageForm")
-    if product_ld:
-        basic_info["product_name"] = product_ld.get("name")
-        basic_info["sku"] = product_ld.get("sku")
-        basic_info["image"] = product_ld.get("image")
-        basic_info["product_url"] = product_ld.get("url")
     if rsc:
+        basic_info["product_name"] = product_name
+        basic_info["image"] = rsc.get("heroImage")
+        # basic_info["hero_image"] = rsc.get("heroImage")
         basic_info["display_name"] = rsc.get("displayName")
         basic_info["sku_name"] = rsc.get("skuName")
         basic_info["url_name"] = rsc.get("urlName")
@@ -506,13 +634,18 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
         basic_info["pack_quantity"] = rsc.get("packQuantityValueDecimal")
         basic_info["unit_of_measurement"] = rsc.get("unitOfMeasurement")
         basic_info["drug_category"] = rsc.get("drugCategory")
-        basic_info["ailment"] = rsc.get("ailment")
+        basic_info["ailment"] = _parse_list_string(rsc.get("ailment"))
         basic_info["ailment_type"] = rsc.get("ailmentType")
         basic_info["therapeutic_class"] = rsc.get("therapeuticClass")
-        basic_info["hero_image"] = rsc.get("heroImage")
         basic_info["image_list"] = rsc.get("imageList")
         basic_info["pdp_id"] = rsc.get("pdpId")
         basic_info["pdp_data_id"] = rsc.get("id")
+    if product_ld:
+        basic_info["product_url"] = product_ld.get("url")
+        if "product_name" not in basic_info or not basic_info["product_name"]:
+            basic_info["product_name"] = product_ld.get("name") or product_name
+        if "image" not in basic_info or not basic_info["image"]:
+            basic_info["image"] = product_ld.get("image")
     basic_info = {k: v for k, v in basic_info.items() if v is not None}
 
     medicine_comparison = extract_comparison_table(html)
@@ -595,7 +728,7 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
         availability["banned"] = rsc.get("banned")
         availability["max_permissible_quantity"] = rsc.get("maxPermissableQuantity")
         availability["cold_storage"] = rsc.get("coldStorage")
-        availability["floor_quantity"] = rsc.get("floorQuantity")
+        # availability["floor_quantity"] = rsc.get("floorQuantity")
     availability = {k: v for k, v in availability.items() if v is not None}
 
     substitute = {}
@@ -618,11 +751,15 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
         substitute["offer_price"] = sub_rsc_keys.get("sub_offerPrice")
         substitute["drug_stock"] = sub_rsc_keys.get("sub_drugStock")
         substitute["banned"] = sub_rsc_keys.get("sub_banned")
+        substitute["hero_image"] = sub_rsc_keys.get("sub_heroImage")
+        substitute["image_list"] = sub_rsc_keys.get("sub_imageList")
     substitute = {k: v for k, v in substitute.items() if v is not None}
 
     detailed_description = extract_descriptive_sections(html)
+    doctor_approved = extract_doctor_approved(html)
+    category_hierarchy = extract_category_hierarchy(html)
 
-    return {
+    result = {
         "breadcrumbs": breadcrumbs,
         "basic_info": basic_info,
         "medicine_comparison": medicine_comparison,
@@ -631,7 +768,11 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
         "availability": availability,
         "substitute": substitute,
         "detailed_description": detailed_description,
+        "category_hierarchy": category_hierarchy,
     }
+    if doctor_approved is not None:
+        result["doctor_approved"] = doctor_approved
+    return result
 
 
 # ── API response parsers ─────────────────────────────────────────────

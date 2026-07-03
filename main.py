@@ -25,21 +25,98 @@ def format_product_output(
     delivery_eta = result.get("delivery_eta", {}) or {}
     breadcrumbs = result.get("breadcrumbs", []) or []
 
-    product_name = basic_info.get("product_name", "")
-    image_url = basic_info.get("image") or basic_info.get("hero_image", "")
-    product_url = basic_info.get("product_url", "")
+    product_name = (
+        basic_info.get("product_name")
+        or basic_info.get("display_name")
+        or basic_info.get("sku_name")
+        or ""
+    )
+    image_url = (
+        basic_info.get("image")
+        or basic_info.get("hero_image")
+        or ""
+    )
+    product_url = basic_info.get("product_url") or ""
+    if not product_url:
+        bc_urls = [b.get("url", "") for b in breadcrumbs if isinstance(b, dict) and b.get("url")]
+        product_url = bc_urls[-1] if bc_urls else ""
     product_price = pricing.get("offer_price") or pricing.get("discounted_price")
 
     bc_names = [b.get("name", "") for b in breadcrumbs if isinstance(b, dict)]
-    l1 = bc_names[0] if len(bc_names) > 0 else ""
-    l2 = bc_names[1] if len(bc_names) > 1 else ""
-    dd = result.get("detailed_description") or {}
-    pt_list = dd.get("Product Title") or []
-    l3 = (pt_list[0] if pt_list else "") or basic_info.get("therapeutic_class", "")
-
-    category_hierarchy = json.dumps({"l1": l1, "l2": l2, "l3": l3}, ensure_ascii=False)
+    ch_dict = {}
+    for i, name in enumerate(bc_names[:-1], start=1):
+        if name:
+            ch_dict[f"l{i}"] = name
+    category_hierarchy = ch_dict if ch_dict else ""
 
     is_sold_out = availability.get("banned", False) or availability.get("drug_stock", 1) == 0
+
+    discount_raw = pricing.get("discount_percentage")
+    discount_val = "N/A" if discount_raw is None or str(discount_raw) in ("0", "0.0", "0.00") else discount_raw
+
+    others = dict(result)
+    others.pop("breadcrumbs", None)
+    others.pop("pricing", None)
+    others.pop("delivery_eta", None)
+    others.pop("category_hierarchy", None)
+    bi = others.pop("basic_info", None)
+    if isinstance(bi, dict):
+        others.update(bi)
+    others.pop("product_url", None)
+    dd = others.pop("detailed_description", None)
+    if isinstance(dd, dict):
+        dd.pop("FAQ", None)
+        others.update(dd)
+
+    mfr = others.get("manufacturer_info")
+    if isinstance(mfr, dict):
+        for key in ( "brand_name", "manufacturer_legal_name", "manufacturer_name_rsc"):
+            mfr.pop(key, None)
+        if not mfr:
+            others.pop("manufacturer_info", None)
+
+    substitute = result.get("substitute", {}) or {}
+    sub_code = substitute.get("drug_code") or pricing.get("substitute_drug_code")
+    others["variation_id"] = [sub_code] if sub_code is not None else []
+    others["MOQ"] = "1"
+    others["data_vendor"] = "Actowiz"
+    mfr_info = result.get("manufacturer_info", {}) or {}
+    brand_val = mfr_info.get("brand_name") or mfr_info.get("manufacturer_name") or ""
+    if not brand_val:
+        pn = basic_info.get("product_name", "")
+        brand_val = pn.split()[0] if pn else ""
+    others["brand"] = brand_val
+
+    images = []
+    for img_key in ("image", "hero_image"):
+        val = basic_info.get(img_key)
+        if val:
+            images.append(val)
+    for img_key in ("image", "hero_image"):
+        val = substitute.get(img_key)
+        if val and val not in images:
+            images.append(val)
+    img_list = basic_info.get("image_list")
+    if isinstance(img_list, list):
+        for url in img_list:
+            if url and url not in images:
+                images.append(url)
+    elif isinstance(img_list, str) and img_list.strip():
+        urls = [u.strip() for u in img_list.split(",") if u.strip()]
+        for url in urls:
+            if url not in images:
+                images.append(url)
+    sub_img_list = substitute.get("image_list")
+    if isinstance(sub_img_list, list):
+        for url in sub_img_list:
+            if url and url not in images:
+                images.append(url)
+    elif isinstance(sub_img_list, str) and sub_img_list.strip():
+        urls = [u.strip() for u in sub_img_list.split(",") if u.strip()]
+        for url in urls:
+            if url not in images:
+                images.append(url)
+    others["Images"] = images
 
     return {
         "product_id": master_drug_code,
@@ -54,7 +131,7 @@ def format_product_output(
         "arrival_date": delivery_eta.get("max_eta"),
         "shipping_charges": "N/A",
         "is_sold_out": is_sold_out,
-        "discount": pricing.get("discount_percentage"),
+        "discount": discount_val,
         "mrp": pricing.get("mrp"),
         "page_url": "N/A",
         "product_url": product_url,
@@ -62,7 +139,7 @@ def format_product_output(
         "avg_rating": "N/A",
         "position": "N/A",
         "country_code": "IN",
-        "others": json.dumps(result, ensure_ascii=False, default=str),
+        "others": others,
     }
 
 

@@ -40,3 +40,13 @@ in 'other' key is json which contains our main output all data which we are doin
     ]    
     "last_updated": "2026-01-28"
 }
+
+
+
+remove breadcrumbs from 'other' value.
+add '"MOQ": "1"' and "data_vendor": "Actowiz" inside 'other'.
+remove 'pricing' from 'other'.
+also inside 'other' add '"variation_id":' which value in list ,that value is Substitute id .
+inside manufacturer_info remove manufacturer_id,brand_name,manufacturer_legal_name,manufacturer_name_rsc.
+add brand inside 'other' tag as 'brand':''.
+add "Images":[] which contains all main product img.
