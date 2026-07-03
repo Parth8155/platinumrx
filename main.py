@@ -55,6 +55,8 @@ def format_product_output(
     discount_val = "N/A" if discount_raw is None or str(discount_raw) in ("0", "0.0", "0.00") else discount_raw
 
     others = dict(result)
+    if not others.get("substitute"):
+        others.pop("substitute", None)
     others.pop("breadcrumbs", None)
     others.pop("pricing", None)
     others.pop("delivery_eta", None)
@@ -74,10 +76,10 @@ def format_product_output(
             mfr.pop(key, None)
         if not mfr:
             others.pop("manufacturer_info", None)
-
-    substitute = result.get("substitute", {}) or {}
-    sub_code = substitute.get("drug_code") or pricing.get("substitute_drug_code")
-    others["variation_id"] = [sub_code] if sub_code is not None else []
+    substitute = result.get("substitute") or {}        
+    if substitute :
+        sub_code = substitute.get("drug_code") or pricing.get("substitute_drug_code")
+        others["variation_id"] = [sub_code] if sub_code is not None else []
     others["MOQ"] = "1"
     others["data_vendor"] = "Actowiz"
     mfr_info = result.get("manufacturer_info", {}) or {}
@@ -87,38 +89,39 @@ def format_product_output(
         brand_val = pn.split()[0] if pn else ""
     others["brand"] = brand_val
 
-    images = []
-    for img_key in ("image", "hero_image"):
-        val = basic_info.get(img_key)
-        if val:
-            images.append(val)
-    img_list = basic_info.get("image_list")
-    if isinstance(img_list, list):
-        for url in img_list:
-            if url and url not in images:
-                images.append(url)
-    elif isinstance(img_list, str) and img_list.strip():
-        urls = [u.strip() for u in img_list.split(",") if u.strip()]
-        for url in urls:
-            if url not in images:
-                images.append(url)
-    others["Images"] = images
+    # images = []
+    # for img_key in ("image", "hero_image"):
+    #     val = basic_info.get(img_key)
+    #     if val:
+    #         images.append(val)
+    # img_list = basic_info.get("image_list")
+    # if isinstance(img_list, list):
+    #     for url in img_list:
+    #         if url and url not in images:
+    #             images.append(url)
+    # elif isinstance(img_list, str) and img_list.strip():
+    #     urls = [u.strip() for u in img_list.split(",") if u.strip()]
+    #     for url in urls:
+    #         if url not in images:
+    #             images.append(url)
+    # others["Images"] = images
 
-    sub_images = []
-    for img_key in ("image", "hero_image"):
-        val = substitute.get(img_key)
-        if val and val not in sub_images:
-            sub_images.append(val)
-    sub_img_list = substitute.get("image_list")
-    if isinstance(sub_img_list, list):
-        for url in sub_img_list:
-            if url and url not in sub_images:
-                sub_images.append(url)
-    elif isinstance(sub_img_list, str) and sub_img_list.strip():
-        urls = [u.strip() for u in sub_img_list.split(",") if u.strip()]
-        for url in urls:
-            if url not in sub_images:
-                sub_images.append(url)
+    if substitute:
+        sub_images = []
+        for img_key in ("image", "hero_image"):
+            val = substitute.get(img_key)
+            if val and val not in sub_images:
+                sub_images.append(val)
+        sub_img_list = substitute.get("image_list")
+        if isinstance(sub_img_list, list):
+            for url in sub_img_list:
+                if url and url not in sub_images:
+                    sub_images.append(url)
+        elif isinstance(sub_img_list, str) and sub_img_list.strip():
+            urls = [u.strip() for u in sub_img_list.split(",") if u.strip()]
+            for url in urls:
+                if url not in sub_images:
+                    sub_images.append(url)
     # if sub_images:
     #     others.setdefault("substitute", {})["img"] = sub_images
 
@@ -231,19 +234,22 @@ def build_output(args: argparse.Namespace, client: PlatinumRxClient) -> Dict[str
 
     sub_key = "substitute"
     if parsed_api_pricing.get("substitute_drug_code"):
-        sub = result.setdefault(sub_key, {})
-        if "drug_code" not in sub:
-            sub["drug_code"] = parsed_api_pricing["substitute_drug_code"]
-        for src_key, dst_key in [
-            ("substitute_mrp", "mrp"),
-            ("substitute_discounted_price", "discounted_price"),
-            ("substitute_offer_price", "offer_price"),
-            ("substitute_drug_stock", "drug_stock"),
-            ("substitute_banned", "banned"),
-        ]:
-            if src_key in parsed_api_pricing and dst_key not in sub:
-                sub[dst_key] = parsed_api_pricing[src_key]
-
+        sub = result.get(sub_key)
+        
+        if sub is not None:
+            if "drug_code" not in sub:
+                sub["drug_code"] = parsed_api_pricing["substitute_drug_code"]
+        
+            for src_key, dst_key in [
+                ("substitute_mrp", "mrp"),
+                ("substitute_discounted_price", "discounted_price"),
+                ("substitute_offer_price", "offer_price"),
+                ("substitute_drug_stock", "drug_stock"),
+                ("substitute_banned", "banned"),
+            ]:
+                if src_key in parsed_api_pricing and dst_key not in sub:
+                    sub[dst_key] = parsed_api_pricing[src_key]
+                    
     if args.pincode and eta_response:
         result["delivery_eta"] = parse_delivery_response(eta_response)
 
