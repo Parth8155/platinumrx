@@ -233,7 +233,7 @@ def _extract_nested_content(container: Tag) -> List[Any]:
                     items.extend(sub_items)
                 else:
                     items.append(inner)
-        elif tag in ("h1", "h2", "h4", "h5", "h6"):
+        elif tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
             t = child.get_text(strip=True)
             if t:
                 items.append(t)
@@ -430,7 +430,6 @@ def extract_drug_ld(html: str) -> Dict[str, Any]:
 
 def extract_product_ld(html: str) -> Dict[str, Any]:
     return extract_ld_by_type(html, "Product") or {}
-
 
 
 def extract_comparison_table(html: str):
@@ -645,54 +644,14 @@ def extract_json_blocks(text):
     else:
         print("No heroImages found")
         return None
-# *************************************
-import re
-from lxml import html
-UUID_PATTERN = re.compile(
-    r"/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})_wm\.png"
-)
-
-def extract_main_product_images(page_html):
-
-    tree = html.fromstring(page_html)
-
-    # image_urls = tree.xpath('//div[@data-testid="pdp-card-compared"]//div[@data-slot="gallery"]//img/@src')
-    image_urls = tree.xpath("//div[@data-testid='pdp-card-single' or @data-testid='pdp-card-compared']//div[@data-slot='gallery']//img/@src")
-    seen_ids = set()
-    unique_images = []
-
-    for url in image_urls:
-        match = UUID_PATTERN.search(url)
-
-        if match:
-            image_id = match.group(1)
-        else:
-            # Fallback if URL doesn't match expected format
-            image_id = url.split("?")[0]
-
-        if image_id not in seen_ids:
-            seen_ids.add(image_id)
-            unique_images.append(url)
-
-    return unique_images
-
-def has_substitute(page_html):
-    tree = html.fromstring(page_html)
-    product = tree.xpath("//div[@data-slot='product-card']")
-    count = len(product)
-    return count > 1   
-# *************************************
 
 
 def parse_pdp_page(html: str) -> Dict[str, Any]:
     drug_ld = extract_drug_ld(html)
     product_ld = extract_product_ld(html)
-    # *************************************
-    main_product_img=extract_main_product_images(html)
-    # *************************************
-
         
     rsc = extract_rsc_product_data(html)
+
     product_name = (
         product_ld.get("name")
         or rsc.get("displayName")
@@ -708,7 +667,7 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
         basic_info["dosage_form"] = drug_ld.get("dosageForm")
     if rsc:
         basic_info["product_name"] = product_name
-        basic_info["image"] = main_product_img
+        basic_info["image"] = rsc.get("heroImage")
         # basic_info["hero_image"] = rsc.get("heroImage")
         basic_info["display_name"] = rsc.get("displayName")
         basic_info["sku_name"] = rsc.get("skuName")
@@ -722,7 +681,7 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
         basic_info["ailment"] = _parse_list_string(rsc.get("ailment"))
         basic_info["ailment_type"] = rsc.get("ailmentType")
         basic_info["therapeutic_class"] = rsc.get("therapeuticClass")
-        basic_info["image_list"] = rsc.get("imageList")
+        # basic_info["image_list"] = rsc.get("imageList")
         basic_info["pdp_id"] = rsc.get("pdpId")
         basic_info["pdp_data_id"] = rsc.get("id")
     if product_ld:
@@ -734,9 +693,8 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
     basic_info = {k: v for k, v in basic_info.items() if v is not None}
 
     medicine_comparison = extract_comparison_table(html)
-    # if not medicine_comparison.get("current_product"):
-    if medicine_comparison is not None and not medicine_comparison.get("current_product"):
 
+    if medicine_comparison is not None and not medicine_comparison.get("current_product"):
         cp = {}
         sp = {}
         if rsc:
@@ -818,55 +776,34 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
         # availability["floor_quantity"] = rsc.get("floorQuantity")
     availability = {k: v for k, v in availability.items() if v is not None}
 
-
-# *************************************
     substitute = {}
-
-    if has_substitute(html):
-        similar = product_ld.get("isSimilarTo") if isinstance(product_ld.get("isSimilarTo"), dict) else None
-
-        if similar:
-            substitute["name"] = similar.get("name")
-            substitute["url"] = similar.get("url")
-            substitute["image"] = extract_json_blocks(html)
-
-            sub_brand = similar.get("brand", {})
-            if isinstance(sub_brand, dict):
-                substitute["brand_name"] = sub_brand.get("name")
-
-            sub_offers = similar.get("offers", {})
-            if isinstance(sub_offers, dict):
-                substitute["price"] = sub_offers.get("price")
-
+    similar = product_ld.get("isSimilarTo") if isinstance(product_ld.get("isSimilarTo"), dict) else None
+    if similar:
+        substitute["name"] = similar.get("name")
+        substitute["url"] = similar.get("url")
+        substitute["image"] =extract_json_blocks(html)  # This will extract heroImages from the HTML
+        sub_brand = similar.get("brand", {})
+        if isinstance(sub_brand, dict):
+            substitute["brand_name"] = sub_brand.get("name")
+        sub_offers = similar.get("offers", {})
+        if isinstance(sub_offers, dict):
+            substitute["price"] = sub_offers.get("price")
+    sub_rsc_keys = {k: v for k, v in rsc.items() if k.startswith("sub_")}
+    if sub_rsc_keys:
+        substitute["drug_code"] = sub_rsc_keys.get("sub_drugCode")
+        substitute["mrp"] = sub_rsc_keys.get("sub_mrp")
+        substitute["discounted_price"] = sub_rsc_keys.get("sub_discountedPrice")
+        substitute["offer_price"] = sub_rsc_keys.get("sub_offerPrice")
+        substitute["drug_stock"] = sub_rsc_keys.get("sub_drugStock")
+        substitute["banned"] = sub_rsc_keys.get("sub_banned")
+        substitute["hero_image"] = sub_rsc_keys.get("sub_heroImage")
+        substitute["image_list"] = sub_rsc_keys.get("sub_imageList")
     substitute = {k: v for k, v in substitute.items() if v is not None}
-
-# *************************************
 
     detailed_description = extract_descriptive_sections(html)
     doctor_approved = extract_doctor_approved(html)
     category_hierarchy = extract_category_hierarchy(html)
 
-    # result = {
-    #     "breadcrumbs": breadcrumbs,
-    #     "basic_info": basic_info,
-    #     "medicine_comparison": medicine_comparison,
-    #     "manufacturer_info": manufacturer_info,
-    #     "pricing": pricing,
-    #     "availability": availability,
-    #     # "substitute": substitute,
-    #     "detailed_description": detailed_description,
-    #     "category_hierarchy": category_hierarchy,
-    #     "Images": main_product_img,
-    # }
-    # # *************************************
-
-    # if substitute:
-    #     result["substitute"] = substitute
-    # # *************************************
-
-    # if doctor_approved is not None:
-    #     result["doctor_approved"] = doctor_approved
-    # return result
     result = {}
 
     if breadcrumbs:
@@ -901,6 +838,7 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
 
     return result
 
+
 # ── API response parsers ─────────────────────────────────────────────
 
 def parse_pricing_response(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -920,17 +858,15 @@ def parse_pricing_response(data: Dict[str, Any]) -> Dict[str, Any]:
         result["drug_stock"] = master.get("drugStock")
         result["banned"] = master.get("banned")
         result["max_permissible_quantity"] = master.get("maxPermissableQuantity")
-    
-        substitute = data.get("data", {}).get("substituteCatalogData", {})
 
-        if isinstance(substitute, dict) and substitute:        
-            substitute = data.get("data", {}).get("substituteCatalogData", {})
-            result["substitute_drug_code"] = substitute.get("drugCode")
-            result["substitute_mrp"] = substitute.get("mrp")
-            result["substitute_discounted_price"] = substitute.get("discountedPrice")
-            result["substitute_offer_price"] = substitute.get("offerPrice")
-            result["substitute_drug_stock"] = substitute.get("drugStock")
-            result["substitute_banned"] = substitute.get("banned")
+    substitute = data.get("data", {}).get("substituteCatalogData", {})
+    if isinstance(substitute, dict):
+        result["substitute_drug_code"] = substitute.get("drugCode")
+        result["substitute_mrp"] = substitute.get("mrp")
+        result["substitute_discounted_price"] = substitute.get("discountedPrice")
+        result["substitute_offer_price"] = substitute.get("offerPrice")
+        result["substitute_drug_stock"] = substitute.get("drugStock")
+        result["substitute_banned"] = substitute.get("banned")
 
     calc = data.get("data", {}).get("priceCalculations", {})
     if isinstance(calc, dict):

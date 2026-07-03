@@ -16,15 +16,16 @@ from parser import (
     merge_pricing_data,
 )
 
-# FOLDER_PATH = rf"D:\Manav Mehta\KSDB - platinumrx\Pagesaves"
-FOLDER_PATH = rf"C:\Users\asus\OneDrive\Pictures\CE\Actowiz\platinumrx\Pagesaves"
+FOLDER_PATH = rf"D:\Manav Mehta\KSDB - platinumrx\Pagesaves"
+
 def make_connection():
     return pymysql.connect(
         host='localhost',
         user='root',
-        password='parth123',
+        password='actowiz',
         database='ksdb_platinumrx',
     )
+
 def create_table():
     with make_connection() as conn:
         with conn.cursor() as curr:
@@ -54,6 +55,7 @@ def create_table():
                 );
             """)
         conn.commit()
+
 def insert_data(data, product_id):
     with make_connection() as conn:
         with conn.cursor() as curr:
@@ -111,8 +113,9 @@ def insert_data(data, product_id):
                 data.get("country_code"),
                 json.dumps(data.get("others"))
             ))
-            # curr.execute("UPDATE sitemap_2026_07_02 set status='fetched' where product_id=%s", (product_id,))
+            curr.execute("UPDATE sitemap_2026_07_02 set status='fetched' where product_id=%s", (product_id,))
             conn.commit()
+
 def readFileFunc(filePath):
     with gzip.open(filePath, 'rb') as file:
         content = file.read()
@@ -228,10 +231,6 @@ def format_product_output(
                     sub_images.append(url)
     # if sub_images:
     #     others.setdefault("substitute", {})["img"] = sub_images
-    shipping_charges = "N/A"
-    if not is_sold_out:
-        shipping_charges = {"Delivery Fee": '0' if float(product_price) > 500 else '49',
-                            "Handling & Packaging Fee":"9"}
 
     return {
         "product_id": master_drug_code,
@@ -244,7 +243,7 @@ def format_product_output(
         "category_hierarchy": category_hierarchy,
         "product_price": product_price,
         "arrival_date": delivery_eta.get("max_eta"),
-        "shipping_charges": shipping_charges,
+        "shipping_charges": "N/A",
         "is_sold_out": is_sold_out,
         "discount": discount_val,
         "mrp": pricing.get("mrp"),
@@ -310,7 +309,6 @@ def save_page_artifacts(
 
     return base
 
-
 def build_output(args: argparse.Namespace, client: PlatinumRxClient) -> Dict[str, Any]:
     display_name, master_drug_code = resolve_identifiers(
         args.url, args.code, args.name
@@ -345,11 +343,11 @@ def build_output(args: argparse.Namespace, client: PlatinumRxClient) -> Dict[str
     sub_key = "substitute"
     if parsed_api_pricing.get("substitute_drug_code"):
         sub = result.get(sub_key)
-        
+
         if sub is not None:
             if "drug_code" not in sub:
                 sub["drug_code"] = parsed_api_pricing["substitute_drug_code"]
-        
+
             for src_key, dst_key in [
                 ("substitute_mrp", "mrp"),
                 ("substitute_discounted_price", "discounted_price"),
@@ -359,7 +357,7 @@ def build_output(args: argparse.Namespace, client: PlatinumRxClient) -> Dict[str
             ]:
                 if src_key in parsed_api_pricing and dst_key not in sub:
                     sub[dst_key] = parsed_api_pricing[src_key]
-                    
+
     if args.pincode and eta_response:
         result["delivery_eta"] = parse_delivery_response(eta_response)
 
@@ -399,36 +397,37 @@ def write_output(data: Dict[str, Any], output_path: Optional[str]) -> None:
 #         client.close()
 
 def start_work(data):
-    args = argparse.Namespace(
-        url=data["product_url"],
-        code=None,
-        name=None,
-        pincode=560001,
-    )
-    validate_args(args)
-    client = PlatinumRxClient()
-    try:
-        product_data = build_output(args, client)
-        insert_data(product_data, data['product_id'])
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    finally:
+    if "otc" not in data["product_url"]:
+        args = argparse.Namespace(
+            url=data["product_url"],
+            code=None,
+            name=None,
+            pincode=560001,
+        )
+
+        validate_args(args)
+
+        client = PlatinumRxClient()
+        try:
+            product_data = build_output(args, client, data)
+            insert_data(product_data, data['product_id'])
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        finally:
             client.close()
 
 def main() -> None:
     create_table()
-    # with make_connection() as conn:
-    #     with conn.cursor(pymysql.cursors.DictCursor) as curr:
-    #         curr.execute("SELECT * from sitemap_2026_07_02 where status='done' limit 1")
-    #         # curr.execute("SELECT * from sitemap_2026_07_02 where product_id='1000006'")
-    #         datas = curr.fetchall()
-    #         with ThreadPoolExecutor(max_workers=8) as executor:
-    #             executor.map(start_work, datas)
+    with make_connection() as conn:
+        with conn.cursor(pymysql.cursors.DictCursor) as curr:
+            curr.execute("SELECT * from sitemap_2026_07_02 where status='done' limit 1")
+            # curr.execute("SELECT * from sitemap_2026_07_02 where product_id='1000006'")
+            datas = curr.fetchall()
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                executor.map(start_work, datas)
 
 
 if __name__ == "__main__":
     # main("https://www.platinumrx.in/medicines/rabceaz-d-10mg-20mg-tablet/1000001", 560001,'output.json')
-    # main()
     main()
-    start_work({"product_url": "https://www.platinumrx.in/medicines/rabceaz-d-10mg-20mg-tablet/1000001", "product_id": 1000001})
