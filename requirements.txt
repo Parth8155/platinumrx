@@ -1,0 +1,5 @@
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+
+product_id;catalog_name;catalog_id;source;scraped_date;product_name;image_url;category_hierarchy;product_price;arrival_date;shipping_charges;is_sold_out;discount;mrp;page_url;product_url;number_of_ratings;avg_rating;position;country_code;others;
