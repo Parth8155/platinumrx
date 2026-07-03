@@ -408,8 +408,6 @@ def start_work(data):
     client = PlatinumRxClient()
     try:
         product_data = build_output(args, client)
-        with open("output.json", "a", encoding="utf-8") as f:
-            f.write(json.dumps(product_data, ensure_ascii=False) + "\n")
         insert_data(product_data, data['product_id'])
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
