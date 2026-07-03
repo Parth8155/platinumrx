@@ -354,6 +354,19 @@ def extract_descriptive_sections(html: str) -> Dict[str, List[Any]]:
     for k, v in sections.items():
         if k not in merged:
             merged[k] = v
+
+    disclaimer_elem = soup.find(lambda t: t.name and t.get_text(strip=True).startswith("Disclaimer"))
+    if disclaimer_elem:
+        parent_section = disclaimer_elem.find_parent(lambda t: isinstance(t, Tag) and t.get("data-slot", "").startswith("section-"))
+        if parent_section:
+            content = _get_content_container(parent_section)
+            if content:
+                merged["Disclaimer"] = _extract_nested_content(content)
+        if "Disclaimer" not in merged:
+            txt = disclaimer_elem.get_text(strip=True)
+            if txt:
+                merged["Disclaimer"] = [txt]
+
     return merged
 
 

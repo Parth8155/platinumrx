@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 from api_client import PlatinumRxClient
@@ -12,6 +13,57 @@ from parser import (
     parse_product_url,
     merge_pricing_data,
 )
+
+
+def format_product_output(
+    result: Dict[str, Any],
+    master_drug_code: int,
+) -> Dict[str, Any]:
+    basic_info = result.get("basic_info", {}) or {}
+    pricing = result.get("pricing", {}) or {}
+    availability = result.get("availability", {}) or {}
+    delivery_eta = result.get("delivery_eta", {}) or {}
+    breadcrumbs = result.get("breadcrumbs", []) or []
+
+    product_name = basic_info.get("product_name", "")
+    image_url = basic_info.get("image") or basic_info.get("hero_image", "")
+    product_url = basic_info.get("product_url", "")
+    product_price = pricing.get("offer_price") or pricing.get("discounted_price")
+
+    bc_names = [b.get("name", "") for b in breadcrumbs if isinstance(b, dict)]
+    l1 = bc_names[0] if len(bc_names) > 0 else ""
+    l2 = bc_names[1] if len(bc_names) > 1 else ""
+    dd = result.get("detailed_description") or {}
+    pt_list = dd.get("Product Title") or []
+    l3 = (pt_list[0] if pt_list else "") or basic_info.get("therapeutic_class", "")
+
+    category_hierarchy = json.dumps({"l1": l1, "l2": l2, "l3": l3}, ensure_ascii=False)
+
+    is_sold_out = availability.get("banned", False) or availability.get("drug_stock", 1) == 0
+
+    return {
+        "product_id": master_drug_code,
+        "catalog_name": product_name,
+        "catalog_id": master_drug_code,
+        "source": "platinumrx",
+        "scraped_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "product_name": product_name,
+        "image_url": image_url,
+        "category_hierarchy": category_hierarchy,
+        "product_price": product_price,
+        "arrival_date": delivery_eta.get("max_eta"),
+        "shipping_charges": "N/A",
+        "is_sold_out": is_sold_out,
+        "discount": pricing.get("discount_percentage"),
+        "mrp": pricing.get("mrp"),
+        "page_url": "N/A",
+        "product_url": product_url,
+        "number_of_ratings": "N/A",
+        "avg_rating": "N/A",
+        "position": "N/A",
+        "country_code": "IN",
+        "others": json.dumps(result, ensure_ascii=False, default=str),
+    }
 
 
 def resolve_identifiers(
@@ -114,7 +166,7 @@ def build_output(args: argparse.Namespace, client: PlatinumRxClient) -> Dict[str
     if args.pincode and eta_response:
         result["delivery_eta"] = parse_delivery_response(eta_response)
 
-    return result
+    return format_product_output(result, master_drug_code)
 
 
 def write_output(data: Dict[str, Any], output_path: Optional[str]) -> None:

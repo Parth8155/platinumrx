@@ -1,0 +1,42 @@
+product_id;catalog_name;catalog_id;source;scraped_date;product_name;image_url;category_hierarchy;product_price;arrival_date;shipping_charges;is_sold_out;discount;mrp;page_url;product_url;number_of_ratings;avg_rating;position;country_code;others;
+
+use this header 
+product_id and catalog_id is same.
+product_name and catalog_name is same.
+add source 'platinumrx'.
+scraped_date in this formate yyyy-mm-dd hh:mm:ss ,ex:-  '2025-06-05 00:16:49'.
+image_url is main image show in web.
+category_hierarchy in this formate need {"l1": , "l2": , "l3": }.
+product_price must be that current product price not Substitute price.
+arrival_date tack as maxEta.
+shipping_charges are N/A.
+is_sold_out boolean.
+discount as per web.
+marp as per web.
+page_url is N/A.
+product_url same as before.
+number_of_ratings;avg_rating;position; are N/A.
+country_code IN.
+in 'other' key is json which contains our main output all data which we are doing right now.
+
+
+
+
+"doctor_approved": {
+    "badge": "Doctor Approved & Trusted",
+    "contributors": [
+        {
+          "name": "",
+          "qualification": "",
+          "url": "",
+          "designation": ""
+        },
+        {
+          "name": "",
+          "qualification": "",
+          "url": "",
+          "designation": ""
+        }
+    ]    
+    "last_updated": "2026-01-28"
+}
