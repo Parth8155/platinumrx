@@ -603,9 +603,51 @@ def extract_category_hierarchy(html: str) -> Any:
     return None
 
 
+import ast
+import re
+import json
+
+def extract_json_blocks(text):
+    # Find all the self.__next_f.push blocks
+    blocks = re.findall(
+        r'self\.__next_f\.push\(\[\d+,\s*"((?:\\.|[^"])*)"\]\)',
+        text,
+        flags=re.DOTALL,
+    )
+
+    hero_images = None
+
+    for i, block in enumerate(blocks):
+        try:
+            # Unescape the string
+            block = ast.literal_eval(f'"{block}"')
+        except:
+            continue
+
+        # Look for the heroImages inside raw.pdpDrugData...
+        # We'll search for the pattern you mentioned
+        match = re.search(r'"heroImages"\s*:\s*(\[.*?\])', block, re.DOTALL)
+        if match:
+            try:
+                hero_images_str = match.group(1)
+                # Clean up if needed and parse
+                hero_images = json.loads(hero_images_str)
+                print(f"✅ Found heroImages in block {i}")
+                # Since you want the "last" one, we'll keep updating
+            except json.JSONDecodeError:
+                continue
+
+    if hero_images:
+        return hero_images
+    else:
+        print("No heroImages found")
+        return None
+
+
 def parse_pdp_page(html: str) -> Dict[str, Any]:
     drug_ld = extract_drug_ld(html)
     product_ld = extract_product_ld(html)
+        
     rsc = extract_rsc_product_data(html)
 
     product_name = (
@@ -736,7 +778,7 @@ def parse_pdp_page(html: str) -> Dict[str, Any]:
     if similar:
         substitute["name"] = similar.get("name")
         substitute["url"] = similar.get("url")
-        substitute["image"] = similar.get("image")
+        substitute["image"] =extract_json_blocks(html)  # This will extract heroImages from the HTML
         sub_brand = similar.get("brand", {})
         if isinstance(sub_brand, dict):
             substitute["brand_name"] = sub_brand.get("name")
@@ -781,8 +823,9 @@ def parse_pricing_response(data: Dict[str, Any]) -> Dict[str, Any]:
     result = {}
     if not data or not isinstance(data, dict):
         return result
-
+    
     master = data.get("data", {}).get("masterCatalogData", {})
+        
     if isinstance(master, dict):
         result["drug_code"] = master.get("drugCode")
         result["mrp"] = master.get("mrp")

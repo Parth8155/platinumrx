@@ -92,10 +92,6 @@ def format_product_output(
         val = basic_info.get(img_key)
         if val:
             images.append(val)
-    for img_key in ("image", "hero_image"):
-        val = substitute.get(img_key)
-        if val and val not in images:
-            images.append(val)
     img_list = basic_info.get("image_list")
     if isinstance(img_list, list):
         for url in img_list:
@@ -106,17 +102,25 @@ def format_product_output(
         for url in urls:
             if url not in images:
                 images.append(url)
+    others["Images"] = images
+
+    sub_images = []
+    for img_key in ("image", "hero_image"):
+        val = substitute.get(img_key)
+        if val and val not in sub_images:
+            sub_images.append(val)
     sub_img_list = substitute.get("image_list")
     if isinstance(sub_img_list, list):
         for url in sub_img_list:
-            if url and url not in images:
-                images.append(url)
+            if url and url not in sub_images:
+                sub_images.append(url)
     elif isinstance(sub_img_list, str) and sub_img_list.strip():
         urls = [u.strip() for u in sub_img_list.split(",") if u.strip()]
         for url in urls:
-            if url not in images:
-                images.append(url)
-    others["Images"] = images
+            if url not in sub_images:
+                sub_images.append(url)
+    # if sub_images:
+    #     others.setdefault("substitute", {})["img"] = sub_images
 
     return {
         "product_id": master_drug_code,
@@ -256,15 +260,36 @@ def write_output(data: Dict[str, Any], output_path: Optional[str]) -> None:
         print(output)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="PlatinumRx PDP Scraper")
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--url", help="Full PDP URL to scrape")
-    group.add_argument("--code", type=int, help="Master drug code")
-    parser.add_argument("--name", help="Display name (used with --code)")
-    parser.add_argument("--output", help="Output file path (default: stdout)")
-    parser.add_argument("--pincode", type=int, help="Pincode for delivery ETA")
-    args = parser.parse_args()
+# def main() -> None:
+#     parser = argparse.ArgumentParser(description="PlatinumRx PDP Scraper")
+#     group = parser.add_mutually_exclusive_group(required=True)
+#     group.add_argument("--url", help="Full PDP URL to scrape")
+#     group.add_argument("--code", type=int, help="Master drug code")
+#     parser.add_argument("--name", help="Display name (used with --code)")
+#     parser.add_argument("--output", help="Output file path (default: stdout)")
+#     parser.add_argument("--pincode", type=int, help="Pincode for delivery ETA")
+#     args = parser.parse_args()
+
+#     validate_args(args)
+
+#     client = PlatinumRxClient()
+#     try:
+#         product_data = build_output(args, client)
+#         write_output(product_data, args.output)
+#     except Exception as e:
+#         print(f"Error: {e}", file=sys.stderr)
+#         sys.exit(1)
+#     finally:
+#         client.close()
+
+def main(url: str, pincode: int = 560001, output: str = None) -> None:
+    args = argparse.Namespace(
+        url=url,
+        code=None,
+        name=None,
+        output=output,
+        pincode=pincode,
+    )
 
     validate_args(args)
 
@@ -279,5 +304,6 @@ def main() -> None:
         client.close()
 
 
+
 if __name__ == "__main__":
-    main()
+    main("https://www.platinumrx.in/otc/similac-infant-stage-1-0-to-6-months-formula-jar-powder-400gm/1797250", 560001,'output.json')
