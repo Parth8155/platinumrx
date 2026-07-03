@@ -16,8 +16,7 @@ from parser import (
     merge_pricing_data,
 )
 
-# FOLDER_PATH = rf"D:\Manav Mehta\KSDB - platinumrx\Pagesaves"
-FOLDER_PATH = rf"C:\Users\asus\OneDrive\Pictures\CE\Actowiz\platinumrx\Pagesaves"
+FOLDER_PATH = rf"D:\Manav Mehta\KSDB - platinumrx\Pagesaves"
 def make_connection():
     return pymysql.connect(
         host='localhost',
@@ -418,17 +417,17 @@ def start_work(data):
 
 def main() -> None:
     create_table()
-    # with make_connection() as conn:
-    #     with conn.cursor(pymysql.cursors.DictCursor) as curr:
-    #         curr.execute("SELECT * from sitemap_2026_07_02 where status='done' limit 1")
-    #         # curr.execute("SELECT * from sitemap_2026_07_02 where product_id='1000006'")
-    #         datas = curr.fetchall()
-    #         with ThreadPoolExecutor(max_workers=8) as executor:
-    #             executor.map(start_work, datas)
+    with make_connection() as conn:
+        with conn.cursor(pymysql.cursors.DictCursor) as curr:
+            curr.execute("SELECT * from sitemap_2026_07_02 where status='done' limit 1")
+            # curr.execute("SELECT * from sitemap_2026_07_02 where product_id='1000006'")
+            datas = curr.fetchall()
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                executor.map(start_work, datas)
 
 
 if __name__ == "__main__":
     # main("https://www.platinumrx.in/medicines/rabceaz-d-10mg-20mg-tablet/1000001", 560001,'output.json')
-    # main()
     main()
-    start_work({"product_url": "https://www.platinumrx.in/medicines/rabceaz-d-10mg-20mg-tablet/1000001", "product_id": 1000001})
+    # main()
+    # start_work({"product_url": "https://www.platinumrx.in/medicines/rabceaz-d-10mg-20mg-tablet/1000001", "product_id": 1000001})
