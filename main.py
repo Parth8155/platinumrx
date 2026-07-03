@@ -21,7 +21,7 @@ def make_connection():
     return pymysql.connect(
         host='localhost',
         user='root',
-        password='parth123',
+        password='actowiz',
         database='ksdb_platinumrx',
     )
 def create_table():
@@ -110,7 +110,7 @@ def insert_data(data, product_id):
                 data.get("country_code"),
                 json.dumps(data.get("others"))
             ))
-            # curr.execute("UPDATE sitemap_2026_07_02 set status='fetched' where product_id=%s", (product_id,))
+            curr.execute("UPDATE sitemap_2026_07_02 set status='fetched' where product_id=%s", (product_id,))
             conn.commit()
 def readFileFunc(filePath):
     with gzip.open(filePath, 'rb') as file:
@@ -135,8 +135,7 @@ def format_product_output(
         or ""
     )
     image_url = (
-        basic_info.get("image")
-        or basic_info.get("hero_image")
+        basic_info.get("image")[0] if len(basic_info.get("image")) > 0 else ""
         or ""
     )
     product_url = basic_info.get("product_url") or ""
@@ -227,10 +226,11 @@ def format_product_output(
                     sub_images.append(url)
     # if sub_images:
     #     others.setdefault("substitute", {})["img"] = sub_images
-    shipping_charges = "N/A"
+    delivery_charges = "N/A"
     if not is_sold_out:
-        shipping_charges = {"Delivery Fee": '0' if float(product_price) > 500 else '49',
+        delivery_charges = {"Delivery Fee": '0' if float(product_price) > 500 else '49',
                             "Handling & Packaging Fee":"9"}
+    others["delivery_charges"] = delivery_charges
 
     return {
         "product_id": master_drug_code,
@@ -243,7 +243,7 @@ def format_product_output(
         "category_hierarchy": category_hierarchy,
         "product_price": product_price,
         "arrival_date": delivery_eta.get("max_eta"),
-        "shipping_charges": shipping_charges,
+        "shipping_charges": "N/A",
         "is_sold_out": is_sold_out,
         "discount": discount_val,
         "mrp": pricing.get("mrp"),
@@ -408,6 +408,8 @@ def start_work(data):
     client = PlatinumRxClient()
     try:
         product_data = build_output(args, client)
+        with open("output.json", "a", encoding="utf-8") as f:
+            f.write(json.dumps(product_data, ensure_ascii=False) + "\n")
         insert_data(product_data, data['product_id'])
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -427,7 +429,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # main("https://www.platinumrx.in/medicines/rabceaz-d-10mg-20mg-tablet/1000001", 560001,'output.json')
     main()
     # main()
-    # start_work({"product_url": "https://www.platinumrx.in/medicines/rabceaz-d-10mg-20mg-tablet/1000001", "product_id": 1000001})
+    # start_work({"product_url": "https://www.platinumrx.in/otc/similac-advance-stage-2-from-6-to-12-months-follow-up-formula-powder-400gm/1797246", "product_id": 1797246})
